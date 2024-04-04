@@ -1,0 +1,1329 @@
+
+#%% Download the Data
+
+import requests
+
+def download_excel(url, filename):
+    response = requests.get(url)
+    with open(filename, 'wb') as file:
+        file.write(response.content)
+
+url = 'https://www.bcentral.cl/documents/33528/2546880/Balanza_comercial_semanal.xls/c5323071-0697-4d7b-3bd9-c09479f2910a?t=1710502200355'
+filename = 'C:/Users/mmartinezm/OneDrive - Larrain Vial/Documentos/Matias/Reporte Balanza Comercial/Balanza_comercial_semanal.xls'  # Update this to the correct path
+download_excel(url, filename)
+
+
+
+#%% Data Import and Automatic Reading (Page1)
+import pandas as pd
+import logging
+
+# Setup logging
+logging.basicConfig(filename='data_processing.log', level=logging.INFO, format='%(asctime)s:%(levelname)s:%(message)s')
+
+def find_start_row(sheet):
+    """
+    Dynamically find the row where actual data starts by checking for non-NaN values.
+    """
+    for i, row in enumerate(sheet.iterrows()):
+        # Check for a date value in the 'Period' column to signify actual data start
+        if pd.notna(row[1].values[1]):  # Assuming the 'Period' is now the second column after ignoring the 'Año' column
+            return i
+    return None
+
+def validate_columns(columns, expected_columns):
+    """
+    Validate that the expected columns match the actual columns, ignoring the first 'Año' column.
+    """
+    return all(col in columns[1:] for col in expected_columns)  # Adjust to ignore the first column in validation
+
+def load_and_process_data(file_path, sheet_name, expected_columns):
+    """
+    Load data from a specific sheet, process it dynamically, and ignore the first 'Año' column.
+    """
+    try:
+        # Attempt to load the sheet with a small number of rows to inspect its structure
+        temp_df = pd.read_excel(file_path, sheet_name=sheet_name, nrows=10)
+        
+        # Dynamically find the start row of the data
+        start_row = find_start_row(temp_df)
+        if start_row is None:
+            raise ValueError("Start row not found. The file format may have changed.")
+
+        # Load the data again from the determined start row, ignoring the first 'Año' column
+        df = pd.read_excel(file_path, sheet_name=sheet_name, skiprows=start_row, usecols="B:E")
+        
+        # Manually assign the correct column names after excluding the first column
+        df.columns = expected_columns
+        
+        # Convert 'Period' to datetime
+        df['Period'] = pd.to_datetime(df['Period'], format='%d-%m-%Y', errors='coerce')
+        
+        logging.info(f"Data loaded and processed successfully for sheet: {sheet_name}")
+        
+        return df
+
+    except Exception as e:
+        logging.error(f"Error processing sheet {sheet_name}: {e}")
+        return None
+    
+
+
+# Initialize a variable to keep track of the previous day
+prev_day = 0
+
+# Adjust your file path and sheet names as necessary
+file_path = 'C:/Users/mmartinezm/OneDrive - Larrain Vial/Documentos/Matias/Reporte Balanza Comercial/Balanza_comercial_semanal.xls'  # Update this to the correct path
+sheet_name = 'SaldoBalComSemanal'
+expected_columns = ['Period', 'Exports', 'Imports', 'Trade Balance']  # Updated expected columns after excluding 'Año'
+
+# Load and process the data
+df = load_and_process_data(file_path, sheet_name, expected_columns)
+
+if df is not None:
+    print(df.head())
+else:
+    print("Failed to load data. Check the log file for errors.")
+    
+# Find rows with NaT values in the 'Period' column
+nat_rows = df[df['Period'].isna()]
+print(nat_rows)
+
+df.at[646, 'Period'] = '2016-05-31'  
+df.at[647, 'Period'] = '2016-06-07' 
+
+# Then attempt to convert 'Period' to datetime again
+df['Period'] = pd.to_datetime(df['Period'], errors='coerce')
+
+df = df.dropna()
+
+
+#%% Data Import and Automatic Reading (Page2)
+    
+def load_and_process_multi_level_data(file_path, sheet_name):
+    # Load the header rows for inspection
+    header_df = pd.read_excel(file_path, sheet_name=sheet_name, header=None, nrows=7)
+
+    # Define a function to join non-empty header names, converting all to strings first
+    def join_headers(header_row):
+        # Convert all items to strings, replace NaN with an empty string, and join non-empty elements
+        header_row = [str(item) if not pd.isnull(item) else '' for item in header_row]
+        return '_'.join(filter(None, header_row))
+
+    # Extract headers and create a single row header
+    header_rows = [list(row) for _, row in header_df.iloc[4:7].iterrows()]
+    single_row_header = [join_headers(header_tuple) for header_tuple in zip(*header_rows)]
+
+    # Load the actual data skipping the first 7 rows (including the header rows)
+    df = pd.read_excel(file_path, sheet_name=sheet_name, header=None, skiprows=7)
+
+    # Set the correct header for the dataframe
+    df.columns = single_row_header
+    if 'Año' in df.columns:
+        df.drop('Año', axis=1, inplace=True)
+        
+    df = df.dropna() 
+    # The DataFrame now has a single row header
+    # Additional processing can be done here as needed
+
+    return df
+
+# Load and process the multi-level data
+multi_level_df = load_and_process_multi_level_data(file_path, 'Imp_Bienes_Semanal')
+
+if multi_level_df is not None:
+    print(multi_level_df.head())
+else:
+    print("Failed to load data with single row header. Check the log file for errors.")
+
+
+#%% Data Import and Automatic Reading (Page3)
+    
+def load_and_process_multi_level_data(file_path, sheet_name):
+    # Load the header rows for inspection
+    header_df = pd.read_excel(file_path, sheet_name=sheet_name, header=None, nrows=8)
+
+    # Define a function to join non-empty header names, converting all to strings first
+    def join_headers(header_row):
+        # Convert all items to strings, replace NaN with an empty string, and join non-empty elements
+        header_row = [str(item) if not pd.isnull(item) else '' for item in header_row]
+        return '_'.join(filter(None, header_row))
+
+    # Extract headers and create a single row header
+    header_rows = [list(row) for _, row in header_df.iloc[5:8].iterrows()]
+    single_row_header = [join_headers(header_tuple) for header_tuple in zip(*header_rows)]
+
+    # Load the actual data skipping the first 7 rows (including the header rows)
+    df = pd.read_excel(file_path, sheet_name=sheet_name, header=None, skiprows=7)
+
+    # Set the correct header for the dataframe
+    df.columns = single_row_header
+    if 'Año' in df.columns:
+        df.drop('Año', axis=1, inplace=True)
+        
+    df = df.dropna() 
+
+    return df
+
+multi_level_df_2 = load_and_process_multi_level_data(file_path, 'Exp_Bienes_Semanal')
+
+if multi_level_df is not None:
+    print(multi_level_df.head())
+else:
+    print("Failed to load data with single row header. Check the log file for errors.")
+
+#%% Rename the df's for simplicity
+
+imports = multi_level_df
+exports = multi_level_df_2
+balance = df
+
+#%% Fix the Date of Observations With Different Date Format
+
+from datetime import datetime
+
+def parse_custom_date(date_str):
+    date_str = date_str.strip()
+    
+    date_formats = ["%Y-%m-%d %H:%M:%S", "%d-%m-%y"]
+
+    for fmt in date_formats:
+        try:
+            return datetime.strptime(date_str, fmt)
+        except ValueError:
+            continue  # Try the next format
+
+    # If none of the formats worked, raise an error
+    raise ValueError(f"No known date format found for: {date_str}")
+
+# Apply the custom date parser to the date column
+imports['Mes'] = imports['Mes'].apply(lambda d: parse_custom_date(d) if isinstance(d, str) else d)
+exports['Periodo'] = exports['Periodo'].apply(lambda d: parse_custom_date(d) if isinstance(d, str) else d)
+balance['Period'] = balance['Period'].apply(lambda d: parse_custom_date(d) if isinstance(d, str) else d) 
+
+# Identify the index of rows where 'Period' matches July 6, 2016
+indexes_to_drop = balance[balance['Period'] == pd.Timestamp('2016-07-06')].index
+
+# Drop these rows by their index
+balance.drop(indexes_to_drop, inplace=True)
+
+# Optionally, reset the index after dropping rows
+balance.reset_index(drop=True, inplace=True)
+
+
+
+#%% Generate the necessary variables to obtain the desired values
+
+# Ensure 'Period' is in datetime format
+balance['Period'] = pd.to_datetime(balance['Period'])
+balance.sort_values('Period', inplace=True)
+
+# Apply the condition to 'Exports'
+balance['Adjusted_Exports'] = balance.apply(lambda row: row['Exports'] if row['Period'].day == 7 
+                                            else row['Exports'] - balance.loc[balance.index[balance.index.get_loc(row.name)-1], 'Exports'] 
+                                            if row.name > 0 else row['Exports'], axis=1)
+
+# Apply the condition to 'Imports'
+balance['Adjusted_Imports'] = balance.apply(lambda row: row['Imports'] if row['Period'].day == 7 
+                                            else row['Imports'] - balance.loc[balance.index[balance.index.get_loc(row.name)-1], 'Imports'] 
+                                            if row.name > 0 else row['Imports'], axis=1)
+
+# Apply the condition to 'Balance'
+balance['Adjusted_Balance'] = balance.apply(lambda row: row['Trade Balance'] if row['Period'].day == 7 
+                                            else row['Trade Balance'] - balance.loc[balance.index[balance.index.get_loc(row.name)-1], 'Trade Balance'] 
+                                            if row.name > 0 else row['Trade Balance'], axis=1) 
+
+
+exports.rename(columns={'Periodo': 'Period'}, inplace=True)
+imports.rename(columns={'Mes': 'Period'}, inplace=True)
+
+
+#%%
+
+def adjust_values(df):
+    """Adjusts values in all columns of the DataFrame based on the 'Period' column."""
+    # Ensure 'Period' is in datetime format
+    df['Period'] = pd.to_datetime(df['Period'])
+    
+    # Iterate over all columns except 'Period'
+    for column in df.columns.drop('Period'):
+        df[f'Adjusted_{column}'] = df.apply(lambda row: row[column] if row['Period'].day == 7
+                                            else row[column] - df.loc[df.index[df.index.get_loc(row.name)-1], column]
+                                            if row.name > 0 else row[column], axis=1)
+
+# Apply the adjustment to the 'exports' and 'imports' DataFrames
+adjust_values(exports)
+adjust_values(imports)
+
+# Now, 'exports' and 'imports' DataFrames include adjusted columns for all variables
+
+
+import os
+import pandas as pd
+
+# Base directory where reports will be saved
+base_dir = "C:/Users/mmartinezm/OneDrive - Larrain Vial/Documentos/Balanza Comercial/"
+
+# Assuming 'df' is your dataframe and it's sorted by 'Period' in ascending order
+df['Period'] = pd.to_datetime(df['Period'])
+current_last_date = df['Period'].iloc[-1].strftime("%d-%m-%Y")
+
+# New folder path construction
+new_folder_path = os.path.join(base_dir, current_last_date)
+
+# Function to read the last stored date
+def read_last_date(file_path):
+    try:
+        with open(file_path, 'r') as file:
+            return file.read().strip()
+    except FileNotFoundError:
+        return None
+
+# Function to write the new last date
+def write_last_date(file_path, last_date):
+    with open(file_path, 'w') as file:
+        file.write(last_date)
+
+# Path to the file where the last date is stored
+last_date_file_path = os.path.join(base_dir, "last_date.txt")
+
+# Read the last date stored
+last_stored_date = read_last_date(last_date_file_path)
+
+# Compare and act upon comparing the stored date with the current last date
+if last_stored_date != current_last_date:
+    # If new observation is detected, create a new folder
+    os.makedirs(new_folder_path, exist_ok=True)
+    
+    # Update the stored last date
+    write_last_date(last_date_file_path, current_last_date)
+else:
+    # If the folder for the current last date already exists or no new observation is detected,
+    # ensure using the existing folder path for saving files.
+    if not os.path.exists(new_folder_path):
+        os.makedirs(new_folder_path, exist_ok=True)
+
+
+
+#%% Generate charts and tables to summarize the findings 
+
+from datetime import timedelta
+import matplotlib.pyplot as plt
+import pandas as pd
+
+balance['Period'] = pd.to_datetime(balance['Period'])
+balance.sort_values('Period', inplace=True)
+
+# Replace 'ExportsColumnName' and 'ImportsColumnName' with the actual column names from your DataFrame
+exports_column_name = 'exports_mm'  # Adjust to the actual column name for exports
+imports_column_name = 'imports_mm'  # Adjust to the actual column name for imports
+
+# Calculate the "mobile month" sum as a rolling sum of the last 4 observations for 'Trade_Balance'
+balance['exports_mm'] = balance['Adjusted_Exports'].rolling(window=4).sum()
+# Calculate the "mobile month" sum as a rolling sum of the last 4 observations for 'Trade_Balance'
+balance['imports_mm'] = balance['Adjusted_Imports'].rolling(window=4).sum()
+
+# Calculate the y/y 1-month rolling percentage change for exports
+balance['Exports_pct_change_yoy'] = (balance[exports_column_name] / balance[exports_column_name].shift(48) - 1)
+
+# Calculate the y/y 1-month rolling percentage change for imports
+balance['Imports_pct_change_yoy'] = (balance[imports_column_name] / balance[imports_column_name].shift(48) - 1)
+
+# Ensure 'Period' is a datetime type and sort the DataFrame by it
+balance['Period'] = pd.to_datetime(balance['Period'])
+balance.sort_values('Period', inplace=True)
+
+# Calculate the "mobile month" sum as a rolling sum of the last 4 observations for 'Trade_Balance'
+balance['sum_monthly_bala'] = balance['Adjusted_Balance'].rolling(window=4).sum()
+
+
+
+eight_years_ago = pd.to_datetime(datetime.now() - timedelta(days=7 * 365))
+balance_filtered = balance[balance['Period'] >= eight_years_ago]
+
+
+fig, ax1 = plt.subplots(figsize=(20, 12))
+
+# Plotting percentage changes
+ax1.set_xlabel('Period')
+ax1.set_ylabel('Percentage Change', color='tab:red')
+ax1.plot(balance_filtered['Period'], balance_filtered['Exports_pct_change_yoy'], label='Exports % Change', color='darkblue')
+ax1.plot(balance_filtered['Period'], balance_filtered['Imports_pct_change_yoy'], label='Imports % Change', color='red')
+
+# Create a second y-axis for trade balance
+ax2 = ax1.twinx()
+ax2.set_ylabel('Trade Balance', color='tab:blue')
+ax2.plot(balance_filtered['Period'], balance_filtered['sum_monthly_bala'], label='Current Account Balance', color='royalblue', alpha = 0.2)
+
+# Fill the area under the cyan line
+ax2.fill_between(balance_filtered['Period'], balance_filtered['sum_monthly_bala'], color='royalblue', alpha=0.2)
+
+
+# Additional plot adjustments
+ax1.tick_params(axis='y', labelcolor='tab:red')
+ax2.tick_params(axis='y', labelcolor='tab:blue')
+fig.tight_layout()
+fig.legend(loc="upper left", bbox_to_anchor=(0.1, 0.9))
+
+plt.title('Cambio Porcentual Año a Año del Balance de Cuenta Corriente en el Tiempo')
+graph_filename = 'graph_balcom_cambporc.png'  # Define your graph's filename
+graph_save_path = os.path.join(new_folder_path, graph_filename)  # Combine folder and filename
+plt.savefig(graph_save_path)
+plt.show()
+
+# Optionally, you can close the figure after saving to free up memory
+plt.close(fig)
+
+
+#%%%  Gráfico Exp. No Mineras, Imp. Sin Comb y Balance CC
+
+imports['importaciones_sin_comb'] = imports['Adjusted_Total de importación de bienes (fob)'] - imports['Adjusted_Productos Energéticos'] 
+exports['exportaciones_no_mineras'] = exports['Adjusted_Total Exportaciones'] - exports['Adjusted_1. Mineras'] 
+
+imports['imp_sincomb_mm'] = imports['importaciones_sin_comb'].rolling(window=4).sum()
+exports['exp_nomine_mm'] = exports['exportaciones_no_mineras'].rolling(window=4).sum()
+
+exports_column_name = 'imp_sincomb_mm'  # Adjust to the actual column name for exports
+imports_column_name = 'exp_nomine_mm'
+
+# Calculate the y/y 1-month rolling percentage change for exports
+imports['importaciones_sin_comb_pct'] = (imports[exports_column_name] / imports[exports_column_name].shift(48) - 1)
+
+# Calculate the y/y 1-month rolling percentage change for imports
+exports['exportaciones_no_mineras_pct'] = (exports[imports_column_name] / exports[imports_column_name].shift(48) - 1)
+
+eight_years_ago = pd.to_datetime(datetime.now() - timedelta(days=8 * 365))
+imports_filtered = imports[imports['Period'] >= eight_years_ago]
+exports_filtered = exports[exports['Period'] >= eight_years_ago]
+
+fig, ax1 = plt.subplots(figsize=(20, 12))
+
+# Plotting percentage changes
+ax1.set_xlabel('Periodo')
+ax1.set_ylabel('Exportaciones no mineras e importaciones ex. combustibles (% a/a, 1 mes móvil)', color='tab:red')
+ax1.plot(imports_filtered['Period'], imports_filtered['importaciones_sin_comb_pct'], label='Importaciones Sin Combustibles', color='red')
+ax1.plot(exports_filtered['Period'], exports_filtered['exportaciones_no_mineras_pct'], label='Exportaciones No Mineras', color='darkblue')
+
+# Create a second y-axis for trade balance
+ax2 = ax1.twinx()
+ax2.set_ylabel('Balanza comercial (USD millones, 1 mes móvil)', color='tab:blue')
+ax2.plot(balance_filtered['Period'], balance_filtered['sum_monthly_bala'], label='Current Account Balance', color='royalblue', alpha = 0.15)
+
+# Fill the area under the cyan line
+ax2.fill_between(balance_filtered['Period'], balance_filtered['sum_monthly_bala'], color='royalblue', alpha=0.15)
+
+
+# Additional plot adjustments
+ax1.tick_params(axis='y', labelcolor='tab:red')
+ax2.tick_params(axis='y', labelcolor='tab:blue')
+fig.tight_layout()
+fig.legend(loc="upper left", bbox_to_anchor=(0.1, 0.9))
+
+plt.title('Cambio Porcentual Año a Año de Exportaciones No Mineras e Importaciones ex. Combustibles & Balance Cuenta Corriente en el Tiempo')
+graph_filename = 'graph_exports_cambporc.png'  # Define your graph's filename
+graph_save_path = os.path.join(new_folder_path, graph_filename)  # Combine folder and filename
+plt.savefig(graph_save_path)
+plt.show()
+
+
+# Optionally, you can close the figure after saving to free up memory
+plt.close(fig)
+
+
+#%%  Exportaciones no Mineras, No Mineras, Cobre 
+
+
+
+exports['Tot_Exp'] = exports['Adjusted_Total Exportaciones'].rolling(window=4).sum()
+exports['Cobre_Tot'] = exports['Adjusted_Cobre'].rolling(window=4).sum()
+
+imports_column_name_1 = 'Tot_Exp'
+imports_column_name_2 = 'Cobre_Tot'
+
+exports['Tot_Exp_Pct'] = (exports[imports_column_name_1] / exports[imports_column_name_1].shift(48) - 1)
+exports['Cobre_Pct'] = (exports[imports_column_name_2] / exports[imports_column_name_2].shift(48) - 1)
+
+eight_years_ago = pd.to_datetime(datetime.now() - timedelta(days=8 * 365))
+imports_filtered_2 = imports[imports['Period'] >= eight_years_ago]
+exports_filtered_2 = exports[exports['Period'] >= eight_years_ago]
+
+fig, ax1 = plt.subplots(figsize=(20, 12))
+
+# Plotting percentage changes
+ax1.set_xlabel('Periodo')
+ax1.set_ylabel('Exportaciones no mineras e importaciones ex. combustibles (% a/a, 1 mes móvil)')
+ax1.plot(exports_filtered_2['Period'], exports_filtered_2['exportaciones_no_mineras_pct'], label='Exportaciones No Mineras', color='red')
+ax1.plot(exports_filtered_2['Period'], exports_filtered_2['Cobre_Pct'], label='Exportaciones de Cobre', color='darkblue')
+ax1.plot(exports_filtered_2['Period'], exports_filtered_2['Tot_Exp_Pct'], label='Total Exportaciones (%a/a, 1 mes móvil)', color='royalblue', alpha = 0.2)
+ax1.fill_between(exports_filtered_2['Period'], exports_filtered_2['Tot_Exp_Pct'], color='royalblue', alpha=0.2)
+
+
+# Additional plot adjustments
+ax1.tick_params(axis='y')
+fig.tight_layout()
+fig.legend(loc="upper left", bbox_to_anchor=(0.1, 0.9))
+
+plt.title('Cambio Porcentual Año a Año del Total de Exportaciones, Exportaciones No Mineras, & Exportaciones de Cobre')
+graph_filename = 'graph_cobre_cambporc.png'  # Define your graph's filename
+graph_save_path = os.path.join(new_folder_path, graph_filename)  # Combine folder and filename
+plt.savefig(graph_save_path)
+plt.show()
+
+# Optionally, you can close the figure after saving to free up memory
+plt.close(fig)
+
+
+
+#%% Importaciones no Combustibles, Consumo, Capital
+
+imports['Imp_Consumo'] = imports['Adjusted_Bienes de Consumo'].rolling(window=4).sum()
+imports['Imp_Capital'] = imports['Adjusted_Bienes de Capital'].rolling(window=4).sum()
+
+imports_column_name_1 = 'Imp_Consumo'
+imports_column_name_2 = 'Imp_Capital'
+
+imports['Imp_Consumo_pct'] = (imports[imports_column_name_1] / imports[imports_column_name_1].shift(48) - 1)
+imports['Imp_Capital_pct'] = (imports[imports_column_name_2] / imports[imports_column_name_2].shift(48) - 1)
+
+eight_years_ago = pd.to_datetime(datetime.now() - timedelta(days=8 * 365))
+imports_filtered_3 = imports[imports['Period'] >= eight_years_ago]
+exports_filtered_3 = exports[exports['Period'] >= eight_years_ago]
+
+fig, ax1 = plt.subplots(figsize=(20, 12))
+
+# Plotting percentage changes
+ax1.set_xlabel('Periodo')
+ax1.set_ylabel('Exportaciones no mineras e importaciones ex. combustibles (% a/a, 1 mes móvil)')
+ax1.plot(imports_filtered_3['Period'], imports_filtered_3['Imp_Capital_pct'], label='Bienes de Capital', color='red')
+ax1.plot(imports_filtered_3['Period'], imports_filtered_3['Imp_Consumo_pct'], label='Bienes de Consumo', color='darkblue')
+ax1.plot(imports_filtered_3['Period'], imports_filtered_3['importaciones_sin_comb_pct'], label='Importaciones Sin Combustible (%a/a, 1 mes móvil)', color='royalblue', alpha = 0.5)
+ax1.fill_between(imports_filtered_3['Period'], imports_filtered_3['importaciones_sin_comb_pct'], color='royalblue', alpha=0.5)
+
+
+# Additional plot adjustments
+ax1.tick_params(axis='y')
+fig.tight_layout()
+fig.legend(loc="upper left", bbox_to_anchor=(0.1, 0.9))
+
+plt.title('Cambio Porcentual Año a Año de Importaciones ex. Combustibles, Bienes de Consumo, & Bienes de Capital')
+graph_filename = 'graph_imports_cambporc.png'  # Define your graph's filename
+graph_save_path = os.path.join(new_folder_path, graph_filename)  # Combine folder and filename
+plt.savefig(graph_save_path)
+plt.show()
+
+
+# Optionally, you can close the figure after saving to free up memory
+plt.close(fig)
+
+
+
+#%% ACCUMULATED TABLE FOR THE TRADE BALANCE
+
+# Assuming 'df1', 'df2', and 'df3' are your dataframes and 'Period' is the common column
+balance_merged = balance.merge(imports, on='Period').merge(exports, on='Period')  
+
+adjusted_merge = balance_merged.loc[:, balance_merged.columns.str.contains("Adjusted_") | (balance_merged.columns == 'Period')]
+
+# Create a new dictionary where each key-value pair is in the form of 'old_name': 'new_name'
+new_column_names = {col: col.replace('Adjusted_', '') for col in adjusted_merge.columns}
+
+# List of columns to keep (those containing 'Adjusted_')
+columns_to_keep = [col for col in balance_merged.columns if 'Adjusted_' in col]
+
+# Add 'Period' to the columns to keep if it's not already included
+if 'Period' not in columns_to_keep:
+    columns_to_keep.append('Period')
+
+# Drop columns that are not in the list of columns to keep
+for col in balance_merged.columns:
+    if col not in columns_to_keep:
+        balance_merged.drop(col, axis=1, inplace=True)
+
+
+# Rename the columns using the created dictionary
+adjusted_merge.rename(columns=new_column_names, inplace=True)
+balance_merged.rename(columns=new_column_names, inplace=True)
+
+adjusted_merge['Otros Combustibles'] = adjusted_merge['Productos Energéticos'] - adjusted_merge['Petróleo']
+adjusted_merge['Importaciones Sin Combustibles'] = adjusted_merge['Imports'] - adjusted_merge['Productos Energéticos']
+adjusted_merge['No Mineras'] = adjusted_merge['Exports'] - adjusted_merge['1. Mineras'] 
+adjusted_merge['Resto Minería'] = adjusted_merge['1. Mineras'] - adjusted_merge['Cobre']
+adjusted_merge.rename(columns={'2. Agropecuarias, silvícolas y pesqueras': 'Sector Primario'}, inplace=True)
+adjusted_merge.rename(columns={'3.  Industriales': 'Industriales'}, inplace=True)
+
+
+balance_merged['Otros Combustibles'] = adjusted_merge['Productos Energéticos'] - adjusted_merge['Petróleo']
+balance_merged['Importaciones Sin Combustibles'] = adjusted_merge['Imports'] - adjusted_merge['Otros Combustibles'] - adjusted_merge['Petróleo']
+balance_merged['No Mineras'] = adjusted_merge['Exports'] - adjusted_merge['1. Mineras'] 
+balance_merged['Resto Minería'] = adjusted_merge['1. Mineras'] - adjusted_merge['Cobre']
+balance_merged.rename(columns={'2. Agropecuarias, silvícolas y pesqueras': 'Sector Primario'}, inplace=True)
+balance_merged.rename(columns={'3.  Industriales': 'Industriales'}, inplace=True)
+balance_merged.rename(columns={'Exports': 'Exportaciones'}, inplace=True)
+balance_merged.rename(columns={'Imports': 'Importaciones'}, inplace=True)
+
+
+adjusted_merge['Exportaciones'] = adjusted_merge['Exports'].rolling(window=4).sum()
+adjusted_merge['Importaciones'] = adjusted_merge['Imports'].rolling(window=4).sum()
+adjusted_merge['Balance'] = adjusted_merge['Exportaciones'] - adjusted_merge['Importaciones']
+adjusted_merge['Bienes de Consumo'] = adjusted_merge['Bienes de Consumo'].rolling(window=4).sum()
+adjusted_merge['Bienes Intermedios'] = adjusted_merge['Bienes Intermedios'].rolling(window=4).sum()
+adjusted_merge['Bienes de Capital'] = adjusted_merge['Bienes de Capital'].rolling(window=4).sum()
+adjusted_merge['Durables (1)'] = adjusted_merge['Durables (1)'].rolling(window=4).sum()
+adjusted_merge['Semidurables (2)'] = adjusted_merge['Semidurables (2)'].rolling(window=4).sum()
+adjusted_merge['Otros bienes de consumo'] = adjusted_merge['Otros bienes de consumo'].rolling(window=4).sum()
+adjusted_merge['Petróleo'] = adjusted_merge['Petróleo'].rolling(window=4).sum()
+adjusted_merge['Otros Combustibles'] = adjusted_merge['Otros Combustibles'].rolling(window=4).sum()
+adjusted_merge['Resto Intermedios'] = adjusted_merge['Resto Intermedios'].rolling(window=4).sum()
+adjusted_merge['Importaciones Sin Combustibles'] = adjusted_merge['Importaciones Sin Combustibles'].rolling(window=4).sum()
+adjusted_merge['No Mineras'] = adjusted_merge['No Mineras'].rolling(window=4).sum()
+adjusted_merge['Cobre'] = adjusted_merge['Cobre'].rolling(window=4).sum()
+adjusted_merge['Resto Minería'] = adjusted_merge['Resto Minería'].rolling(window=4).sum()
+adjusted_merge['Sector Primario'] = adjusted_merge['Sector Primario'].rolling(window=4).sum()
+adjusted_merge['Industriales'] = adjusted_merge['Industriales'].rolling(window=4).sum()
+adjusted_merge['Automóviles'] = adjusted_merge['Automóviles'].rolling(window=4).sum()
+adjusted_merge['Celulares'] = adjusted_merge['Celulares'].rolling(window=4).sum()
+adjusted_merge['Otros vehículos de transporte'] = adjusted_merge['Otros vehículos de transporte'].rolling(window=4).sum()
+adjusted_merge['Maquinaria para la minería y la construcción'] = adjusted_merge['Maquinaria para la minería y la construcción'].rolling(window=4).sum()
+adjusted_merge['Bienes de Capital ex. Otros vehículos de transporte'] = adjusted_merge['Bienes de Capital'] - adjusted_merge['Otros vehículos de transporte']
+adjusted_merge['Otros mineros_Hierro'] = adjusted_merge['Otros mineros_Hierro'].rolling(window=4).sum()
+adjusted_merge['Carbonato de litio'] = adjusted_merge['Carbonato de litio'].rolling(window=4).sum()
+adjusted_merge['Madera aserrada'] = adjusted_merge['Madera aserrada'].rolling(window=4).sum()
+adjusted_merge['Madera perfilada'] = adjusted_merge['Madera perfilada'].rolling(window=4).sum()
+adjusted_merge['Tableros de fibra de madera'] = adjusted_merge['Tableros de fibra de madera'].rolling(window=4).sum()
+adjusted_merge['Celulosa cruda de conífera'] = adjusted_merge['Celulosa cruda de conífera'].rolling(window=4).sum()
+adjusted_merge['Celulosa blanqueada y semiblanqueada de conífera'] = adjusted_merge['Celulosa blanqueada y semiblanqueada de conífera'].rolling(window=4).sum()
+adjusted_merge['Celulosa blanqueada y semiblanqueada de eucaliptus'] = adjusted_merge['Celulosa blanqueada y semiblanqueada de eucaliptus'].rolling(window=4).sum()
+adjusted_merge['Celulosa, papel y otros'] = adjusted_merge['Celulosa, papel y otros'].rolling(window=4).sum()
+adjusted_merge['Yodo'] = adjusted_merge['Yodo'].rolling(window=4).sum()
+adjusted_merge['Nitrato de potasio'] = adjusted_merge['Nitrato de potasio'].rolling(window=4).sum()
+adjusted_merge['Vino embotellado'] = adjusted_merge['Vino embotellado'].rolling(window=4).sum()
+adjusted_merge['Vino a granel y otros'] = adjusted_merge['Vino a granel y otros'].rolling(window=4).sum()
+adjusted_merge.rename(columns={'Otros vehículos de transporte': 'Otros vehículos de transp'}, inplace=True)
+adjusted_merge.rename(columns={'Bienes de Capital ex. Otros vehículos de transporte': 'B de Capital ex. Otros vehículos de transp'}, inplace=True)
+
+
+
+
+balance_merged.sort_values(by='Period', inplace=True)
+adjusted_merge.sort_values(by='Period', inplace=True)
+
+month_to_date_row = balance_merged.tail(1).copy()
+
+month_to_date_row.rename(columns=new_column_names, inplace=True)
+
+month_to_date_row['Period'] = 'MtD'
+
+# Prepare last 4 weeks and last 5 end-of-month values from adjusted_merge as before
+last_4_weeks = adjusted_merge.tail(4).sort_values(by='Period', ascending=False)
+end_of_month_rows = adjusted_merge[adjusted_merge['Period'].dt.is_month_end]
+if end_of_month_rows.iloc[-1]['Period'].month == last_4_weeks.iloc[-1]['Period'].month:
+    end_of_month_rows = end_of_month_rows[:-1]  # Ensure no overlap
+last_5_end_of_month = end_of_month_rows.tail(5).sort_values(by='Period', ascending=False)
+
+# Combine last 4 weeks, last 5 end-of-month, and the month-to-date row into a single DataFrame
+concat_df = pd.concat([last_4_weeks, last_5_end_of_month], ignore_index=True)
+
+# Ensure 'Period' is the first column if not already
+columns = ['Period'] + [col for col in concat_df.columns if col != 'Period']
+concat_df = concat_df[columns]
+concat_df['Period'] = pd.to_datetime(concat_df['Period'], errors='coerce').dt.strftime('%d-%m-%Y')
+
+combined_df = pd.concat([concat_df, month_to_date_row], ignore_index=True)
+# If 'Period' was converted to string or needs reformatting:
+balance_merged['Period'].fillna('MtD', inplace=True)
+
+
+# Filter only the needed columns
+filtered_columns = ['Period', 'Exportaciones', 'Importaciones', 'Balance', 'Bienes de Consumo',
+                    'Bienes Intermedios', 'Bienes de Capital', 'Durables (1)', 'Semidurables (2)',
+                    'Otros bienes de consumo', 'Petróleo', 'Otros Combustibles', 'Resto Intermedios', 
+                    'Importaciones Sin Combustibles', 'No Mineras', 'Cobre', 'Resto Minería', 
+                    'Sector Primario', 'Industriales']
+result_df = combined_df[filtered_columns]
+
+####################################Table######################################
+
+for col in result_df.columns:
+    if result_df[col].dtype in ['float64', 'int64']:
+        result_df[col] = result_df[col].round(2)
+
+from reportlab.lib.pagesizes import letter, landscape
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Spacer, Paragraph
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import inch
+from reportlab.lib.colors import Color
+
+
+
+def prepare_data_chunks(df, chunk_size=5):
+    """
+    Split DataFrame into chunks, ensuring 'Period' is included in every chunk.
+    """
+    # Separate 'Period' column from the rest of the DataFrame
+    period_df = df[['Period']]
+    other_columns = df.drop('Period', axis=1)
+    
+    # Calculate the number of chunks needed
+    num_chunks = (len(other_columns.columns) + chunk_size - 1) // chunk_size
+    
+    chunks = []
+    for i in range(num_chunks):
+        # Determine the columns for the current chunk
+        chunk_columns = other_columns.columns[i*chunk_size : (i+1)*chunk_size]
+        
+        # Create the chunk by selecting columns and concatenating with 'Period'
+        chunk = pd.concat([period_df, other_columns[chunk_columns]], axis=1)
+        chunks.append(chunk)
+    
+    return chunks
+
+# Assuming result_df is your DataFrame and it includes a 'Period' column
+chunks = prepare_data_chunks(result_df, chunk_size=5)
+
+# Now, `chunks` is a list of DataFrames, each including 'Period' and a subset of other columns
+
+def split_dataframe(df, chunk_size):
+    """Split DataFrame into smaller sections, including 'Period' in each."""
+    chunks = []
+    num_columns = len(df.columns)
+    num_chunks = (num_columns - 1) // chunk_size + 1  # Ensure 'Period' is counted
+    
+    for i in range(num_chunks):
+        # Calculate column indices, making sure to include 'Period' in each chunk
+        if i == 0:
+            chunk = df.iloc[:, :chunk_size]
+        else:
+            additional_cols = min(chunk_size, num_columns - i*chunk_size)
+            chunk = df.iloc[:, i*chunk_size:(i*chunk_size)+additional_cols]
+        chunks.append(chunk)
+    return chunks
+
+# Assuming 'adjusted_merged_filtered' is your DataFrame
+chunks = prepare_data_chunks(result_df, chunk_size=6)  # Adjust 'chunk_size' as needed
+
+pdf_path = os.path.join(new_folder_path, 'table_accumulated.pdf')
+doc = SimpleDocTemplate(pdf_path, pagesize=landscape(letter), rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=18)
+elements = []
+
+styles = getSampleStyleSheet()
+
+title_text = 'Balanza Comercial en millones de USD (4 semanas acumuladas)'
+title = Paragraph(title_text, styles['Title'])
+elements.append(title)  # Add title to the elements list
+elements.append(Spacer(1, 12)) 
+
+# FUNCTION TO TURN HEX COLORS INTO RGB
+def hex_to_rgb(hex_color):
+    hex_color = hex_color.lstrip('#')
+    lv = len(hex_color)
+    return tuple(int(hex_color[i:i + lv // 3], 16) / 255.0 for i in range(0, lv, lv // 3))
+
+
+header_background_color = hex_to_rgb("#4E5D6C")  # Example: dark gray
+header_text_color = hex_to_rgb("#FFFFFF")  # White
+row_background_color = hex_to_rgb("#F5F5F5")  # Example: light gray
+line_color = hex_to_rgb("#000000")  # Black
+
+for chunk in chunks:
+
+    data = [chunk.columns.tolist()] + chunk.values.tolist()
+    
+    table=Table(data)
+    table.setStyle(TableStyle([
+    ('BACKGROUND', (0, 0), (-1, 0), Color(*header_background_color)),
+    ('TEXTCOLOR', (0, 0), (-1, 0), Color(*header_text_color)),
+    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+    ('BACKGROUND', (0, 1), (-1, -1), Color(*row_background_color)),
+    ('BOX', (0,0), (-1,-1), 1, Color(*line_color)),
+    ('GRID', (0,0), (-1,-1), 1, Color(*line_color)),
+    ]))
+    
+    elements.append(table)
+    elements.append(Spacer(1, 0.8*inch))
+
+# Build the PDF
+doc.build(elements)
+print(f"PDF with tables created at: {pdf_path}")
+
+
+#%% ACCUMULATED TABLE FOR IMPORT
+
+
+
+# Filter only the needed columns
+filtered_columns = ['Period','Automóviles', 'Celulares', 'Otros vehículos de transp', 'Maquinaria para la minería y la construcción', 
+                    'B de Capital ex. Otros vehículos de transp']
+result_df = concat_df[filtered_columns]
+
+####################################Table######################################
+
+for col in result_df.columns:
+    if result_df[col].dtype in ['float64', 'int64']:
+        result_df[col] = result_df[col].round(2)
+
+
+
+
+
+pdf_path = os.path.join(new_folder_path, 'table_accumulated_imports.pdf')
+doc = SimpleDocTemplate(pdf_path, pagesize=landscape(letter), rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=18)
+elements = []
+
+styles = getSampleStyleSheet()
+
+title_text = 'Importaciones en millones de USD (4 semanas acumuladas)'
+title = Paragraph(title_text, styles['Title'])
+elements.append(title)  # Add title to the elements list
+elements.append(Spacer(1, 12)) 
+
+# Convert result_df to a format suitable for reportlab Table
+data = [result_df.columns.tolist()] + result_df.values.tolist()
+
+# Create the Table
+table = Table(data)
+
+table=Table(data)
+table.setStyle(TableStyle([
+('BACKGROUND', (0, 0), (-1, 0), Color(*header_background_color)),
+('TEXTCOLOR', (0, 0), (-1, 0), Color(*header_text_color)),
+('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+('BACKGROUND', (0, 1), (-1, -1), Color(*row_background_color)),
+('BOX', (0,0), (-1,-1), 1, Color(*line_color)),
+('GRID', (0,0), (-1,-1), 1, Color(*line_color)),
+]))
+
+title = Paragraph('Importaciones en millones de USD (4 semanas acumuladas)')
+elements.append(table)
+
+# Build the PDF
+doc.build(elements)
+
+print(f"PDF with tables created at: {pdf_path}")
+
+
+#%% ACCUMULATED TABLE FOR EXPORTS
+
+
+
+# Filter only the needed columns
+filtered_columns = ['Period', 'Cobre', 'Otros mineros_Hierro', 'Carbonato de litio', 'Madera aserrada', 
+                    'Madera perfilada', 'Tableros de fibra de madera', 'Celulosa cruda de conífera',
+                    'Celulosa blanqueada y semiblanqueada de conífera', 'Celulosa blanqueada y semiblanqueada de eucaliptus',
+                    'Celulosa, papel y otros', 'Yodo', 'Nitrato de potasio', 'Vino embotellado', 'Vino a granel y otros']
+result_df = concat_df[filtered_columns]
+
+####################################Table######################################
+
+for col in result_df.columns:
+    if result_df[col].dtype in ['float64', 'int64']:
+        result_df[col] = result_df[col].round(2)
+
+
+
+
+
+pdf_path = 'table_accumulated_exports.pdf'
+doc = SimpleDocTemplate(pdf_path, pagesize=landscape(letter), rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=18)
+elements = []
+
+def prepare_data_chunks(df, chunk_size=5):
+    """
+    Split DataFrame into chunks, ensuring 'Period' is included in every chunk.
+    """
+    # Separate 'Period' column from the rest of the DataFrame
+    period_df = df[['Period']]
+    other_columns = df.drop('Period', axis=1)
+    
+    # Calculate the number of chunks needed
+    num_chunks = (len(other_columns.columns) + chunk_size - 1) // chunk_size
+    
+    chunks = []
+    for i in range(num_chunks):
+        # Determine the columns for the current chunk
+        chunk_columns = other_columns.columns[i*chunk_size : (i+1)*chunk_size]
+        
+        # Create the chunk by selecting columns and concatenating with 'Period'
+        chunk = pd.concat([period_df, other_columns[chunk_columns]], axis=1)
+        chunks.append(chunk)
+    
+    return chunks
+
+# Now, `chunks` is a list of DataFrames, each including 'Period' and a subset of other columns
+
+
+# Assuming 'adjusted_merged_filtered' is your DataFrame
+chunks = prepare_data_chunks(result_df, chunk_size=4)  # Adjust 'chunk_size' as needed
+
+pdf_path = os.path.join(new_folder_path, 'table_accumulated_exports.pdf')
+doc = SimpleDocTemplate(pdf_path, pagesize=landscape(letter), rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=18)
+elements = []
+
+styles = getSampleStyleSheet()
+
+title_text = 'Exportaciones en millones de USD (4 semanas acumuladas)'
+title = Paragraph(title_text, styles['Title'])
+elements.append(title)  # Add title to the elements list
+elements.append(Spacer(1, 12)) 
+
+from reportlab.lib.colors import Color
+
+# FUNCTION TO TURN HEX COLORS INTO RGB
+def hex_to_rgb(hex_color):
+    hex_color = hex_color.lstrip('#')
+    lv = len(hex_color)
+    return tuple(int(hex_color[i:i + lv // 3], 16) / 255.0 for i in range(0, lv, lv // 3))
+
+
+header_background_color = hex_to_rgb("#4E5D6C")  # Example: dark gray
+header_text_color = hex_to_rgb("#FFFFFF")  # White
+row_background_color = hex_to_rgb("#F5F5F5")  # Example: light gray
+line_color = hex_to_rgb("#000000")  # Black
+
+for chunk in chunks:
+
+    data = [chunk.columns.tolist()] + chunk.values.tolist()
+    
+    table=Table(data)
+    table.setStyle(TableStyle([
+    ('BACKGROUND', (0, 0), (-1, 0), Color(*header_background_color)),
+    ('TEXTCOLOR', (0, 0), (-1, 0), Color(*header_text_color)),
+    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+    ('BACKGROUND', (0, 1), (-1, -1), Color(*row_background_color)),
+    ('BOX', (0,0), (-1,-1), 1, Color(*line_color)),
+    ('GRID', (0,0), (-1,-1), 1, Color(*line_color)),
+    ]))
+    
+    title = Paragraph('Exportaciones en millones de USD (4 semanas acumuladas)')
+    elements.append(table)
+    elements.append(Spacer(1, 1.2 * inch))
+
+# Build the PDF
+doc.build(elements)
+print(f"PDF with tables created at: {pdf_path}")
+
+
+
+#%%     TABLE FOR GROWTH VARIANCE (MOTHER TABLE)
+
+# Assuming 'adjusted_merge' is already prepared as before
+
+# Calculate Year-over-Year percentage changes for each variable of interest
+for column_name in ['Exportaciones', 'Importaciones', 'Balance', 'Bienes de Consumo', 
+                    'Bienes Intermedios', 'Bienes de Capital', 'Durables (1)', 'Semidurables (2)', 
+                    'Otros bienes de consumo', 'Petróleo', 'Otros Combustibles', 'Resto Intermedios', 
+                    'Importaciones Sin Combustibles', 'No Mineras', 'Cobre', 'Resto Minería', 
+                    'Sector Primario', 'Industriales']:
+    # Ensure to create YoY percentage change columns for each variable of interest
+    # Example for 'Importaciones' -> 'Importaciones_pct_change_yoy'
+    yoy_column_name = column_name + '_pct_change_yoy'
+    adjusted_merge[yoy_column_name] = ((adjusted_merge[column_name] / adjusted_merge[column_name].shift(48)) - 1) * 100
+
+# Now 'adjusted_merge' contains YoY percentage change columns for each variable of interest
+
+# Since the YoY percentage change calculation introduces NaNs for the first 48 rows, 
+# you might want to filter your DataFrame from the 49th row onwards if those initial NaNs are not meaningful for your analysis
+adjusted_merge_filtered = adjusted_merge.iloc[48:].copy()
+
+# Step 2: Identify the last 4 observations
+last_4_observations = adjusted_merge.tail(4)
+
+# Step 3: Identify the last 5 end-of-month observations, excluding overlaps
+# Filter end-of-month observations
+end_of_month_observations = adjusted_merge[adjusted_merge['Period'].dt.is_month_end]
+
+# Exclude any end-of-month observations that are already included in the last 4 observations
+excluded_months = last_4_observations['Period'].dt.to_period('M').unique()
+end_of_month_filtered = end_of_month_observations[~end_of_month_observations['Period'].dt.to_period('M').isin(excluded_months)]
+
+# Get the last 5 end-of-month observations
+last_5_end_of_month = end_of_month_filtered.tail(5)
+
+# Combine both sets of observations
+combined_observations = pd.concat([last_4_observations, last_5_end_of_month]).sort_values('Period', ascending=False)
+
+# Filter the combined observations for the columns of interest
+columns_of_interest = ['Period'] + [col for col in adjusted_merge.columns if '_pct_change_yoy' in col]
+final_table_data = combined_observations[columns_of_interest]
+
+# Ensure 'Period' is in a proper string format for display
+final_table_data['Period'] = final_table_data['Period'].dt.strftime('%d-%m-%Y')
+
+# Prepare the 'combined_df' DataFrame as before, but this time use 'adjusted_merge_filtered' and select YoY percentage change columns
+# Skip the last_4_weeks and last_5_end_of_month preparation if they are not relevant for the YoY percentage change analysis
+
+# If you still need the month-to-date row from 'balance_merged', make sure to calculate its YoY percentage change as well, if applicable
+# The month-to-date row calculation might differ based on how you wish to handle YoY calculations for a partial month
+
+# Filter only the needed YoY percentage change columns for the final table
+filtered_yoy_columns = ['Period'] + [col + '_pct_change_yoy' for col in ['Exportaciones', 'Importaciones', 'Balance', 'Bienes de Consumo',
+                                                                          'Bienes Intermedios', 'Bienes de Capital', 'Durables (1)', 'Semidurables (2)',
+                                                                          'Otros bienes de consumo', 'Petróleo', 'Otros Combustibles', 'Resto Intermedios', 
+                                                                          'Importaciones Sin Combustibles', 'No Mineras', 'Cobre', 'Resto Minería', 
+                                                                          'Sector Primario', 'Industriales']]
+result_df = final_table_data[filtered_yoy_columns]
+
+# result_df is now ready for table generation, summarizing YoY percentage changes
+
+# List of new names you want to apply to 'result_df'
+new_names = [
+    'Exportaciones', 'Importaciones', 'Balance', 'Bienes de Consumo', 
+    'Bienes Intermedios', 'Bienes de Capital', 'Durables (1)', 'Semidurables (2)', 
+    'Otros bienes de consumo', 'Petróleo', 'Otros Combustibles', 'Resto Intermedios', 
+    'Importaciones Sin Combustibles', 'No Mineras', 'Cobre', 'Resto Minería', 
+    'Sector Primario', 'Industriales'
+]
+
+# Assuming 'result_df' has a 'Period' column plus other columns that you want to rename
+# and the total number of columns matches the length of 'new_names' + 1 for 'Period'
+if len(result_df.columns) == len(new_names) + 1:
+    # Keep 'Period' as the first column, and rename other columns using 'new_names'
+    result_df.columns = ['Period'] + new_names
+else:
+    print("The number of new names does not match the number of columns in 'result_df'.")
+
+
+####################################Table######################################
+
+for col in result_df.columns:
+    if result_df[col].dtype in ['float64', 'int64']:
+        result_df[col] = result_df[col].round(2)
+
+from reportlab.lib.pagesizes import letter, landscape
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Spacer
+from reportlab.lib.units import inch
+
+
+
+# Assuming 'adjusted_merged_filtered' is your DataFrame
+chunks = prepare_data_chunks(result_df, chunk_size=6)  # Adjust 'chunk_size' as needed
+
+pdf_path = os.path.join(new_folder_path, 'table_growth.pdf')
+doc = SimpleDocTemplate(pdf_path, pagesize=landscape(letter), rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=18)
+elements = []
+
+styles = getSampleStyleSheet()
+
+title_text = 'Crecimiento Anual de la Balanza Comercial (%a/a)'
+title = Paragraph(title_text, styles['Title'])
+elements.append(title)  # Add title to the elements list
+elements.append(Spacer(1, 12)) 
+
+from reportlab.lib.colors import Color
+
+# FUNCTION TO TURN HEX COLORS INTO RGB
+def hex_to_rgb(hex_color):
+    hex_color = hex_color.lstrip('#')
+    lv = len(hex_color)
+    return tuple(int(hex_color[i:i + lv // 3], 16) / 255.0 for i in range(0, lv, lv // 3))
+
+
+header_background_color = hex_to_rgb("#4E5D6C")  # Example: dark gray
+header_text_color = hex_to_rgb("#FFFFFF")  # White
+row_background_color = hex_to_rgb("#F5F5F5")  # Example: light gray
+line_color = hex_to_rgb("#000000")  # Black
+
+for chunk in chunks:
+
+    data = [chunk.columns.tolist()] + chunk.values.tolist()
+    
+    table=Table(data)
+    table.setStyle(TableStyle([
+    ('BACKGROUND', (0, 0), (-1, 0), Color(*header_background_color)),
+    ('TEXTCOLOR', (0, 0), (-1, 0), Color(*header_text_color)),
+    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+    ('BACKGROUND', (0, 1), (-1, -1), Color(*row_background_color)),
+    ('BOX', (0,0), (-1,-1), 1, Color(*line_color)),
+    ('GRID', (0,0), (-1,-1), 1, Color(*line_color)),
+    ]))
+    
+    elements.append(table)
+    elements.append(Spacer(1, 1.2 * inch))
+
+# Build the PDF
+doc.build(elements)
+print(f"PDF with tables created at: {pdf_path}")
+
+
+#%% GROWTH TABLE FOR IMPORTS
+
+
+for column_name in ['Automóviles', 'Celulares', 'Otros vehículos de transp', 'Maquinaria para la minería y la construcción', 
+                    'B de Capital ex. Otros vehículos de transp']:
+    # Ensure to create YoY percentage change columns for each variable of interest
+    # Example for 'Importaciones' -> 'Importaciones_pct_change_yoy'
+    yoy_column_name = column_name + '_pct_change_yoy'
+    adjusted_merge[yoy_column_name] = ((adjusted_merge[column_name] / adjusted_merge[column_name].shift(48)) - 1) * 100
+
+
+adjusted_merge[yoy_column_name] = ((adjusted_merge[column_name] / adjusted_merge[column_name].shift(48)) - 1) * 100
+
+# Now 'adjusted_merge' contains YoY percentage change columns for each variable of interest
+
+# Since the YoY percentage change calculation introduces NaNs for the first 48 rows, 
+# you might want to filter your DataFrame from the 49th row onwards if those initial NaNs are not meaningful for your analysis
+adjusted_merge_filtered = adjusted_merge.iloc[48:].copy()
+
+# Step 2: Identify the last 4 observations
+last_4_observations = adjusted_merge.tail(4)
+
+# Step 3: Identify the last 5 end-of-month observations, excluding overlaps
+# Filter end-of-month observations
+end_of_month_observations = adjusted_merge[adjusted_merge['Period'].dt.is_month_end]
+
+# Exclude any end-of-month observations that are already included in the last 4 observations
+excluded_months = last_4_observations['Period'].dt.to_period('M').unique()
+end_of_month_filtered = end_of_month_observations[~end_of_month_observations['Period'].dt.to_period('M').isin(excluded_months)]
+
+# Get the last 5 end-of-month observations
+last_5_end_of_month = end_of_month_filtered.tail(5)
+
+# Combine both sets of observations
+combined_observations = pd.concat([last_4_observations, last_5_end_of_month]).sort_values('Period', ascending=False)
+
+# Filter the combined observations for the columns of interest
+columns_of_interest = ['Period'] + [col for col in adjusted_merge.columns if '_pct_change_yoy' in col]
+final_table_data = combined_observations[columns_of_interest]
+
+# Ensure 'Period' is in a proper string format for display
+final_table_data['Period'] = final_table_data['Period'].dt.strftime('%d-%m-%Y')
+
+# Prepare the 'combined_df' DataFrame as before, but this time use 'adjusted_merge_filtered' and select YoY percentage change columns
+# Skip the last_4_weeks and last_5_end_of_month preparation if they are not relevant for the YoY percentage change analysis
+
+# If you still need the month-to-date row from 'balance_merged', make sure to calculate its YoY percentage change as well, if applicable
+# The month-to-date row calculation might differ based on how you wish to handle YoY calculations for a partial month
+
+# Filter only the needed YoY percentage change columns for the final table
+filtered_yoy_columns = ['Period'] + [col + '_pct_change_yoy' for col in ['Automóviles', 'Celulares', 'Otros vehículos de transp', 'Maquinaria para la minería y la construcción', 
+                    'B de Capital ex. Otros vehículos de transp']]
+result_df = final_table_data[filtered_yoy_columns]
+
+# result_df is now ready for table generation, summarizing YoY percentage changes
+
+# List of new names you want to apply to 'result_df'
+new_names = ['Automóviles', 'Celulares', 'Otros vehículos de transporte', 'Maqui para la minería y la construcción', 
+                    'B. Capital ex. Otros vehículos de transporte']
+
+
+# Assuming 'result_df' has a 'Period' column plus other columns that you want to rename
+# and the total number of columns matches the length of 'new_names' + 1 for 'Period'
+if len(result_df.columns) == len(new_names) + 1:
+    # Keep 'Period' as the first column, and rename other columns using 'new_names'
+    result_df.columns = ['Period'] + new_names
+else:
+    print("The number of new names does not match the number of columns in 'result_df'.")
+
+
+####################################Table######################################
+
+for col in result_df.columns:
+    if result_df[col].dtype in ['float64', 'int64']:
+        result_df[col] = result_df[col].round(2)
+
+from reportlab.lib.pagesizes import letter, landscape
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Spacer
+from reportlab.lib.units import inch
+
+
+
+# Assuming 'adjusted_merged_filtered' is your DataFrame
+chunks = prepare_data_chunks(result_df, chunk_size=6)  # Adjust 'chunk_size' as needed
+
+pdf_path = os.path.join(new_folder_path, 'table_growth_imports.pdf')
+doc = SimpleDocTemplate(pdf_path, pagesize=landscape(letter), rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=18)
+elements = []
+
+styles = getSampleStyleSheet()
+
+title_text = 'Crecimiento Anual de las Importaciones (%a/a)'
+title = Paragraph(title_text, styles['Title'])
+elements.append(title)  # Add title to the elements list
+elements.append(Spacer(1, 12)) 
+
+from reportlab.lib.colors import Color
+
+# FUNCTION TO TURN HEX COLORS INTO RGB
+def hex_to_rgb(hex_color):
+    hex_color = hex_color.lstrip('#')
+    lv = len(hex_color)
+    return tuple(int(hex_color[i:i + lv // 3], 16) / 255.0 for i in range(0, lv, lv // 3))
+
+
+header_background_color = hex_to_rgb("#4E5D6C")  # Example: dark gray
+header_text_color = hex_to_rgb("#FFFFFF")  # White
+row_background_color = hex_to_rgb("#F5F5F5")  # Example: light gray
+line_color = hex_to_rgb("#000000")  # Black
+
+for chunk in chunks:
+
+    data = [chunk.columns.tolist()] + chunk.values.tolist()
+    
+    table=Table(data)
+    table.setStyle(TableStyle([
+    ('BACKGROUND', (0, 0), (-1, 0), Color(*header_background_color)),
+    ('TEXTCOLOR', (0, 0), (-1, 0), Color(*header_text_color)),
+    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+    ('BACKGROUND', (0, 1), (-1, -1), Color(*row_background_color)),
+    ('BOX', (0,0), (-1,-1), 1, Color(*line_color)),
+    ('GRID', (0,0), (-1,-1), 1, Color(*line_color)),
+    ]))
+    
+    title = Paragraph('Crecimiento Anual de las Importaciones')
+    elements.append(table)
+    elements.append(Spacer(1, 1.2 * inch))
+
+# Build the PDF
+doc.build(elements)
+print(f"PDF with tables created at: {pdf_path}")
+
+
+#%% GROWTH TABLE FOR EXPORTS
+
+
+for column_name in ['Cobre', 'Otros mineros_Hierro', 'Carbonato de litio', 'Madera aserrada', 
+                    'Madera perfilada', 'Tableros de fibra de madera', 'Celulosa cruda de conífera',
+                    'Celulosa blanqueada y semiblanqueada de conífera', 'Celulosa blanqueada y semiblanqueada de eucaliptus',
+                    'Celulosa, papel y otros', 'Yodo', 'Nitrato de potasio', 'Vino embotellado', 'Vino a granel y otros']:
+    # Ensure to create YoY percentage change columns for each variable of interest
+    # Example for 'Importaciones' -> 'Importaciones_pct_change_yoy'
+    yoy_column_name = column_name + '_pct_change_yoy'
+    adjusted_merge[yoy_column_name] = ((adjusted_merge[column_name] / adjusted_merge[column_name].shift(48)) - 1) * 100
+
+
+adjusted_merge[yoy_column_name] = ((adjusted_merge[column_name] / adjusted_merge[column_name].shift(48)) - 1) * 100
+
+# Now 'adjusted_merge' contains YoY percentage change columns for each variable of interest
+
+# Since the YoY percentage change calculation introduces NaNs for the first 48 rows, 
+# you might want to filter your DataFrame from the 49th row onwards if those initial NaNs are not meaningful for your analysis
+adjusted_merge_filtered = adjusted_merge.iloc[48:].copy()
+
+# Step 2: Identify the last 4 observations
+last_4_observations = adjusted_merge.tail(4)
+
+# Step 3: Identify the last 5 end-of-month observations, excluding overlaps
+# Filter end-of-month observations
+end_of_month_observations = adjusted_merge[adjusted_merge['Period'].dt.is_month_end]
+
+# Exclude any end-of-month observations that are already included in the last 4 observations
+excluded_months = last_4_observations['Period'].dt.to_period('M').unique()
+end_of_month_filtered = end_of_month_observations[~end_of_month_observations['Period'].dt.to_period('M').isin(excluded_months)]
+
+# Get the last 5 end-of-month observations
+last_5_end_of_month = end_of_month_filtered.tail(5)
+
+# Combine both sets of observations
+combined_observations = pd.concat([last_4_observations, last_5_end_of_month]).sort_values('Period', ascending=False)
+
+# Filter the combined observations for the columns of interest
+columns_of_interest = ['Period'] + [col for col in adjusted_merge.columns if '_pct_change_yoy' in col]
+final_table_data = combined_observations[columns_of_interest]
+
+# Ensure 'Period' is in a proper string format for display
+final_table_data['Period'] = final_table_data['Period'].dt.strftime('%d-%m-%Y')
+
+# Prepare the 'combined_df' DataFrame as before, but this time use 'adjusted_merge_filtered' and select YoY percentage change columns
+# Skip the last_4_weeks and last_5_end_of_month preparation if they are not relevant for the YoY percentage change analysis
+
+# If you still need the month-to-date row from 'balance_merged', make sure to calculate its YoY percentage change as well, if applicable
+# The month-to-date row calculation might differ based on how you wish to handle YoY calculations for a partial month
+
+# Filter only the needed YoY percentage change columns for the final table
+filtered_yoy_columns = ['Period'] + [col + '_pct_change_yoy' for col in ['Cobre', 'Otros mineros_Hierro', 'Carbonato de litio', 'Madera aserrada', 
+                    'Madera perfilada', 'Tableros de fibra de madera', 'Celulosa cruda de conífera',
+                    'Celulosa blanqueada y semiblanqueada de conífera', 'Celulosa blanqueada y semiblanqueada de eucaliptus',
+                    'Celulosa, papel y otros', 'Yodo', 'Nitrato de potasio', 'Vino embotellado', 'Vino a granel y otros']]
+result_df = final_table_data[filtered_yoy_columns]
+
+# result_df is now ready for table generation, summarizing YoY percentage changes
+
+# List of new names you want to apply to 'result_df'
+new_names = ['Cobre', 'Otros mineros_Hierro', 'Carbonato de litio', 'Madera aserrada', 
+                    'Madera perfilada', 'Tableros de fibra de madera', 'Celulosa cruda de conífera',
+                    'Celulosa blanqueada y semiblanqueada de conífera', 'Celulosa blanqueada y semiblanqueada de eucaliptus',
+                    'Celulosa, papel y otros', 'Yodo', 'Nitrato de potasio', 'Vino embotellado', 'Vino a granel y otros']
+
+
+# Assuming 'result_df' has a 'Period' column plus other columns that you want to rename
+# and the total number of columns matches the length of 'new_names' + 1 for 'Period'
+if len(result_df.columns) == len(new_names) + 1:
+    # Keep 'Period' as the first column, and rename other columns using 'new_names'
+    result_df.columns = ['Period'] + new_names
+else:
+    print("The number of new names does not match the number of columns in 'result_df'.")
+
+
+####################################Table######################################
+
+for col in result_df.columns:
+    if result_df[col].dtype in ['float64', 'int64']:
+        result_df[col] = result_df[col].round(2)
+
+from reportlab.lib.pagesizes import letter, landscape
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import inch
+
+
+
+# Assuming 'adjusted_merged_filtered' is your DataFrame
+chunks = prepare_data_chunks(result_df, chunk_size=4)  # Adjust 'chunk_size' as needed
+
+pdf_path = os.path.join(new_folder_path, 'table_growth_exports.pdf')
+doc = SimpleDocTemplate(pdf_path, pagesize=landscape(letter), rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=18)
+elements = []
+
+styles = getSampleStyleSheet()
+
+title_text = 'Crecimiento Anual de las Exportaciones (%a/a)'
+title = Paragraph(title_text, styles['Title'])
+elements.append(title)  # Add title to the elements list
+elements.append(Spacer(1, 12)) 
+
+from reportlab.lib.colors import Color
+
+# FUNCTION TO TURN HEX COLORS INTO RGB
+def hex_to_rgb(hex_color):
+    hex_color = hex_color.lstrip('#')
+    lv = len(hex_color)
+    return tuple(int(hex_color[i:i + lv // 3], 16) / 255.0 for i in range(0, lv, lv // 3))
+
+
+header_background_color = hex_to_rgb("#4E5D6C")  # Example: dark gray
+header_text_color = hex_to_rgb("#FFFFFF")  # White
+row_background_color = hex_to_rgb("#F5F5F5")  # Example: light gray
+line_color = hex_to_rgb("#000000")  # Black
+
+for chunk in chunks:
+
+    data = [chunk.columns.tolist()] + chunk.values.tolist()
+    
+    table=Table(data)
+    table.setStyle(TableStyle([
+    ('BACKGROUND', (0, 0), (-1, 0), Color(*header_background_color)),
+    ('TEXTCOLOR', (0, 0), (-1, 0), Color(*header_text_color)),
+    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+    ('BACKGROUND', (0, 1), (-1, -1), Color(*row_background_color)),
+    ('BOX', (0,0), (-1,-1), 1, Color(*line_color)),
+    ('GRID', (0,0), (-1,-1), 1, Color(*line_color)),
+    ]))
+    
+    title = Paragraph('Crecimiento Anual de las Exportaciones')
+    elements.append(table)
+    elements.append(Spacer(1, 1.2 * inch))
+
+# Build the PDF
+doc.build(elements)
+print(f"PDF with tables created at: {pdf_path}")
